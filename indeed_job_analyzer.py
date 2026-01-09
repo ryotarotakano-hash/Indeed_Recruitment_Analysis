@@ -102,12 +102,24 @@ class TalentScopeAI:
 
     def _create_fresh_driver(self):
         options = Options()
+        
+        # ==========================================
+        # ▼ クラウドサーバー用設定（ヘッドレスモード）
+        # ==========================================
+        options.add_argument("--headless")  # 画面を表示しない
+        options.add_argument("--no-sandbox") # サンドボックス解除
+        options.add_argument("--disable-dev-shm-usage") # メモリ共有無効化
+        options.add_argument("--disable-gpu") # GPU無効化
+        # ==========================================
+
         options.add_argument("--start-maximized")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
+        # User-Agentを偽装してブロックを回避しやすくする
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         options.add_argument("--log-level=3")
+        
         service = Service(ChromeDriverManager().install())
         return webdriver.Chrome(service=service, options=options)
 
@@ -288,9 +300,7 @@ class TalentScopeAI:
                                 formatted_jobs += f"JOB_START\nTitle:{t}\nURL:{u}\nSalary:{sal}\nLoc:{l}\nRem:{r}\nDet:{d}\nJOB_END\n"
                                 count += 1
                         
-                        # ==========================================
-                        # 変更点: ダッシュボード用に raw_data も返す
-                        # ==========================================
+                        # raw_dataを返すのでダッシュボードの表に対応
                         return {"count": len(jobs_data), "jobs": formatted_jobs, "raw_data": jobs_data}
                     
                     else:
@@ -380,9 +390,8 @@ class TalentScopeAI:
 
 def main():
     print("=========================================")
-    print("   TalentScope AI - v33 (Template Master)")
+    print("   TalentScope AI - v33 (Server Mode)")
     print("=========================================")
-    print("※ 完璧なテンプレート出力 & リンク集生成")
     
     input_str = input("企業リストを入力してください (例: 株式会社エレファントストーン@東京都渋谷区)\n> ")
     input_str = input_str.replace("，", ",").replace("　", " ").strip()
