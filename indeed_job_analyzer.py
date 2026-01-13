@@ -1,17 +1,12 @@
+# -*- coding: utf-8 -*-
 import time
 import random
 import sys
 import json
 import re
+import os
 import urllib.parse
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from DrissionPage import ChromiumPage, ChromiumOptions
 from bs4 import BeautifulSoup
 from groq import Groq, RateLimitError
 from duckduckgo_search import DDGS
@@ -100,43 +95,108 @@ class TalentScopeAI:
         except:
             return {"target_industry": "General", "negative_keywords": ""}
 
-    def _create_fresh_driver(self):
-        options = Options()
+    # ==========================================
+    # ▼ DrissionPage設定 (ステルス強化版)
+    # ==========================================
+    def _create_drission_driver(self):
+        co = ChromiumOptions()
         
-        # ==========================================
-        # ▼ クラウドサーバー用設定（ヘッドレスモード）
-        # ==========================================
-        options.add_argument("--headless")  # 画面を表示しない
-        options.add_argument("--no-sandbox") # サンドボックス解除
-        options.add_argument("--disable-dev-shm-usage") # メモリ共有無効化
-        options.add_argument("--disable-gpu") # GPU無効化
-        # ==========================================
+        # 記憶（Cookie）を保存するフォルダを設定
+        # これにより、一度突破すれば次回から「顔なじみ」になります
+        current_dir = os.getcwd()
+        user_data_path = os.path.join(current_dir, "browser_data_stealth")
+        co.set_user_data_path(user_data_path)
 
-        options.add_argument("--start-maximized")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        # User-Agentを偽装してブロックを回避しやすくする
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        options.add_argument("--log-level=3")
+        # 必須: 自動化フラグを消す
+        co.set_argument('--no-sandbox')
+        co.set_argument('--disable-infobars')
+        co.set_argument('--lang=ja-JP')
         
-        service = Service(ChromeDriverManager().install())
-        return webdriver.Chrome(service=service, options=options)
+        # 必須: 最新のChromeとして振る舞うUser-Agent
+        co.set_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
 
-    def _scroll_page(self, driver):
+        # ポート衝突回避
+        co.auto_port()
+
         try:
-            for _ in range(4):
-                driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.PAGE_DOWN)
-                time.sleep(random.uniform(0.5, 1.2))
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-        except: pass
+            page = ChromiumPage(co)
+            return page
+        except Exception as e:
+            print(f"   ⚠️ ブラウザ起動エラー(自動修復します): {e}")
+            time.sleep(3)
+            return ChromiumPage(co)
+
+    def _human_like_mouse_move(self, page):
+        """ マウスを人間のようにランダムに動かす """
+        try:
+            # 画面の中央付近で適当に動かす
+            width = 1920
+            height = 1080
+            for _ in range(3):
+                x = random.randint(100, width - 100)
+                y = random.randint(100, height - 100)
+                # DrissionPageにはマウス移動シミュレーションがないため
+                # JSを使ってスクロール等で代用して「活動」をアピール
+                page.scroll.to_location(x, y)
+                time.sleep(random.uniform(0.1, 0.3))
+        except:
+            pass
+
+    def _solve_cloudflare(self, page):
+        """ Cloudflare突破ロジック（強化版） """
+        time.sleep(2)
+        title = page.title.lower() if page.title else ""
+        
+        # Cloudflareの画面かチェック
+        if "verify" in title or "challenge" in title or "security" in title or page.ele("text:人間であることを確認"):
+            print("   🛡️ Cloudflare検知。ステルス突破モード起動...")
+            
+            # 1. まず人間らしくマウスを揺らす（超重要）
+            self._human_like_mouse_move(page)
+            time.sleep(random.uniform(1.5, 3.0))
+
+            # 2. iframeの中のチェックボックスを探してクリック
+            found_checkbox = False
+            for _ in range(5): # 5回トライ
+                try:
+                    iframe = page.get_frame('@src^https://challenges.cloudflare.com')
+                    if iframe:
+                        # チェックボックスっぽい要素を全検索
+                        # input type=checkbox だけでなく、クリック可能なbodyも狙う
+                        target = iframe.ele('tag:input')
+                        if not target: target = iframe.ele('@type=checkbox')
+                        if not target: target = iframe.ele('tag:body') # 最終手段：iframe全体を押す
+
+                        if target:
+                            print("   👉 自動クリックを実行します...")
+                            target.click()
+                            found_checkbox = True
+                            break
+                except:
+                    pass
+                time.sleep(1)
+
+            # 3. 結果待ち (もし自動でダメなら、人間が押すのを待つ)
+            # 待機時間を【3分】に延長しました。ゆっくり手動クリックしてください。
+            print("   ⏳ 【重要】認証画面です。もし画面が変わらない場合、")
+            print("   ⏳ 手動で『人間であることを確認』をクリックしてください！(3分待ちます)")
+            
+            start_time = time.time()
+            while time.time() - start_time < 180: # 180秒待機
+                title = page.title.lower() if page.title else ""
+                if "verify" not in title and "challenge" not in title and "security" not in title:
+                    print("   🚀 突破成功！（または手動認証完了）")
+                    # 成功したら少し待ってCookieを馴染ませる
+                    time.sleep(3)
+                    return
+                time.sleep(1)
+            
+            print("   ⚠️ 時間切れ。今回はスキップします。")
 
     def extract_jobs_via_ai(self, raw_html, company, location, filter_data):
         print(f"   🤖 Groq解析中... ({company})")
         soup = BeautifulSoup(raw_html, "html.parser")
 
-        # 求人カード特定 & 構造化
         extracted_jobs_text = ""
         
         job_titles = soup.find_all("h2", class_=lambda x: x and "jobTitle" in x)
@@ -173,7 +233,7 @@ class TalentScopeAI:
             """
 
         if not extracted_jobs_text:
-            print("   ⚠️ 構造化抽出失敗。全文モードに切り替えます。")
+            print("   ⚠️ 構造化抽出失敗。全文モードへ。")
             for tag in soup(["script", "style", "svg", "path", "footer", "nav", "noscript", "header"]):
                 tag.decompose()
             extracted_jobs_text = soup.get_text(separator=" ", strip=True)[:18000]
@@ -259,37 +319,44 @@ class TalentScopeAI:
             desc = strategy["desc"]
 
             for attempt in range(MAX_RETRIES):
-                driver = None
+                page = None
                 try:
                     retry_label = f" ({desc} - 試行{attempt+1})"
                     print(f"🔍 '{q_val}' を検索中... エリア: {l_val if l_val else '全国'}{retry_label}")
                     
-                    driver = self._create_fresh_driver()
+                    page = self._create_drission_driver()
+                    
+                    # 戦略: まずトップページに行って、人間アピールをする
+                    if attempt == 0:
+                        page.get("https://jp.indeed.com/")
+                        self._solve_cloudflare(page)
+                    
+                    # 本番検索
                     base_url = f"https://jp.indeed.com/jobs?q={urllib.parse.quote(q_val)}"
                     if l_val:
                         base_url += f"&l={urllib.parse.quote(l_val)}"
                     
-                    driver.get(base_url)
+                    page.get(base_url)
                     
-                    page_src = driver.page_source.lower()
-                    if "verify you are human" in page_src or "challenge" in driver.title.lower() or "security check" in page_src:
-                        print("   ⚠️ ブロック検知。再起動します...")
-                        driver.quit()
-                        time.sleep(10)
-                        continue 
+                    # 再度チェック
+                    self._solve_cloudflare(page)
                     
-                    time.sleep(3)
-                    self._scroll_page(driver)
+                    # 読み込み待機
+                    time.sleep(2)
+                    page.scroll.to_bottom()
+                    time.sleep(1)
                     
-                    jobs_data = self.extract_jobs_via_ai(driver.page_source, q_val, l_val, filter_data)
+                    html_content = page.html
+                    jobs_data = self.extract_jobs_via_ai(html_content, q_val, l_val, filter_data)
+                    
+                    page.quit() # 終わったら閉じる
                     
                     if jobs_data is not None and len(jobs_data) > 0:
                         print(f"   ✅ ヒットしました！ ({len(jobs_data)}件)")
-                        driver.quit()
                         
                         formatted_jobs = ""
                         count = 0
-                        for job in jobs_data[:10]: # 多めに取得
+                        for job in jobs_data[:10]:
                             if isinstance(job, dict):
                                 t = job.get('title', '不明')
                                 u = job.get('url', '#')
@@ -300,24 +367,21 @@ class TalentScopeAI:
                                 formatted_jobs += f"JOB_START\nTitle:{t}\nURL:{u}\nSalary:{sal}\nLoc:{l}\nRem:{r}\nDet:{d}\nJOB_END\n"
                                 count += 1
                         
-                        # raw_dataを返すのでダッシュボードの表に対応
                         return {"count": len(jobs_data), "jobs": formatted_jobs, "raw_data": jobs_data}
                     
                     else:
                         print(f"   ⚠️ 求人なし (次の戦略へ)")
-                        driver.quit()
-                        break 
+                        continue 
 
                 except Exception as e:
                     print(f"   ⚠️ エラー: {e}")
-                    if driver: driver.quit()
-                    time.sleep(5)
+                    time.sleep(3)
                     continue 
 
         return None
 
     def analyze_with_groq(self, company_data_list, companies_info, filter_data):
-        print("\n🧠 Groqで最終レポートを作成中 (Template v33)...")
+        print("\n🧠 Groqで最終レポートを作成中...")
         input_data_str = ""
         for comp in companies_info:
             name = comp['name'] 
@@ -382,7 +446,6 @@ class TalentScopeAI:
         )
         text = response.choices[0].message.content if response else "❌ 生成失敗"
         
-        # 仕上げの掃除
         clean_text = text.replace("**", "").replace("##", "■").replace("###", "■").replace("* ", "・")
         clean_text = re.sub(r'^\s*-\s', '・', clean_text, flags=re.MULTILINE)
         
@@ -390,7 +453,7 @@ class TalentScopeAI:
 
 def main():
     print("=========================================")
-    print("   TalentScope AI - v33 (Server Mode)")
+    print("   TalentScope AI - Final Stealth Ver    ")
     print("=========================================")
     
     input_str = input("企業リストを入力してください (例: 株式会社エレファントストーン@東京都渋谷区)\n> ")
